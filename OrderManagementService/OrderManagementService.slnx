@@ -1,3 +1,9 @@
 <Solution>
-  <Project Path="OrderManagement.Tests/OrderManagement.Tests.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/OrderManagement.Core/OrderManagement.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OrderManagement.Tests/OrderManagement.Tests.csproj" />
+  </Folder>
+  <Project Path="src/OrderManagement.Api/OrderManagement.Api.csproj" Id="2a8fb237-c689-473b-b3f6-8eb4a30c5319" />
 </Solution>

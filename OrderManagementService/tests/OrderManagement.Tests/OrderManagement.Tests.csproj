@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OrderManagementService\OrderManagement.Core.csproj" />
+    <ProjectReference Include="..\..\src\OrderManagement.Core\OrderManagement.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

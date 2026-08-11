@@ -1,34 +1,24 @@
 {
   "compilerOptions": {
-    /* Language & Environment */
-    "target": "ES2020",
-    "lib": ["ES2020"],
-    "module": "commonjs",
+    "target": "es2023",
+    "module": "esnext",
+    "lib": ["ES2023", "DOM"],
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
 
-    /* Emit */
-    "outDir": "./js",
-    "rootDir": "./src",
-    "sourceMap": true,
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
 
-    /* Strictness - required for this exercise */
-    "strict": true,                 // turns on all of the below as a bundle
-    "noImplicitAny": true,          // no silently-typed `any` parameters
-    "strictNullChecks": true,       // null/undefined must be opted into via unions
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitThis": true,
-    "alwaysStrict": true,
-
-    /* Extra safety nets */
+    /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "forceConsistentCasingInFileNames": true,
-
-    "esModuleInterop": true,
-    "skipLibCheck": true
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src"]
 }

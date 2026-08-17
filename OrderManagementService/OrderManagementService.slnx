@@ -5,5 +5,8 @@
   <Folder Name="/tests/">
     <Project Path="tests/OrderManagement.Tests/OrderManagement.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/CacheRepro/CacheRepro.csproj" />
+  </Folder>
   <Project Path="src/OrderManagement.Api/OrderManagement.Api.csproj" Id="2a8fb237-c689-473b-b3f6-8eb4a30c5319" />
 </Solution>

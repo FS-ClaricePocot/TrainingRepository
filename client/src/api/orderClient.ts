@@ -3,7 +3,7 @@
 
 import type { Order, OrderStatus } from "../types/order";
 
-const BASE_URL = "https://localhost:5001";
+const BASE_URL = "https://localhost:7271";
 
 
 export type ApiError =

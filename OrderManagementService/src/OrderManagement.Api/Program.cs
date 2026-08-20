@@ -1,8 +1,35 @@
+using System.Net;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using OrderManagement.Api.Auth;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
 builder.Services.AddControllers();
+
+// Adding authentication schemes for cookie and API key
+builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultScheme = "Selector";
+    })
+    .AddPolicyScheme("Selector", "Cookie or ApiKey", options =>
+    {
+        options.ForwardDefaultSelector = AuthSchemeSelector.Select;
+    })
+    .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
+    {
+        //TODO: configurations for cookie name, expiry, etc. for internal admin tool
+    })
+    .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthConstants.SchemeName, options => 
+    { 
+        //TODO: configurations for external partner apikey here
+    });
+
+builder.Services.AddOrderApiAuthorization();
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
@@ -25,6 +52,8 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseCors();
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 

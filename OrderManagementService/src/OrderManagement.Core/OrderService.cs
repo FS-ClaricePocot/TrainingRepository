@@ -1,7 +1,5 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Caching.Memory;
 
 public class Order
 {
@@ -11,25 +9,18 @@ public class Order
     public string Status { get; set; }
 }
 
-internal class CacheEntry
-{
-    public List<Order> Orders { get; set; }
-    public DateTime ExpiresAtUtc { get; set; }
-}
-
 public class OrderService
 {
-    private static readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
-
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new();
+    private readonly IMemoryCache _cache;
 
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromSeconds(30);
 
     private readonly string _connectionString;
 
-    public OrderService(string connectionString)
+    public OrderService(string connectionString, IMemoryCache cache)
     {
         _connectionString = connectionString;
+        _cache = cache;
     }
 
     private static string BuildCacheKey(int customerId, string status)
@@ -41,59 +32,51 @@ public class OrderService
     {
         string cacheKey = BuildCacheKey(customerId, status);
 
-        //Valid unexpired entry already present
-        if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow)
+        //Returns existing unexpired cached value or creates new entry with the call to DB
+        var lazyOrders = _cache.GetOrCreate(cacheKey, entry =>
         {
-            return cached.Orders;
-        }
-
-
-        // Stampede guard: only one per caller per cache key hits the DB;
-        var gate = _keyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync();
+            entry.AbsoluteExpirationRelativeToNow = _cacheTtl;
+            return new Lazy<Task<List<Order>>>(() => LoadOrdersFromDbAsync(customerId, status));
+        });
 
         try
         {
-            if (_cache.TryGetValue(cacheKey, out var cachedOrder) && cachedOrder.ExpiresAtUtc > DateTime.UtcNow)
-            {
-                return cachedOrder.Orders;
-            }
-
-            var orders = new List<Order>();
-            string query = "SELECT OrderId, CustomerId, Total, Status FROM Orders WHERE CustomerId = @customerId AND Status = @status";
-
-            using (var conn = new SqlConnection(_connectionString))
-            {
-                conn.Open();
-                var cmd = new SqlCommand(query, conn);
-                cmd.Parameters.AddWithValue("@customerId", customerId);
-                cmd.Parameters.AddWithValue("@status", status);
-                var reader = cmd.ExecuteReader();
-
-                while (reader.Read())
-                {
-                    var order = new Order();
-                    order.OrderId = reader.GetInt32(0);
-                    order.CustomerId = reader.GetInt32(1);
-                    order.Total = reader.GetDecimal(2);
-                    order.Status = reader.GetString(3);
-                    orders.Add(order);
-                }
-            }
-
-            _cache[cacheKey] = new CacheEntry
-            {
-                Orders = orders,
-                ExpiresAtUtc = DateTime.UtcNow.Add(_cacheTtl)
-            };
-
-            return orders;
-
+            //Triggers the actual call to the DB
+            return await lazyOrders!.Value;
         }
-        finally
+        catch
         {
-            gate.Release();
+            //Removes bad entry in the event of DB call failure
+            _cache.Remove(cacheKey);
+            throw;
         }
+    }
+
+    public async Task<List<Order>> LoadOrdersFromDbAsync(int customerId, string status)
+    {
+        var orders = new List<Order>();
+        string query = "SELECT OrderId, CustomerId, Total, Status FROM Orders WHERE CustomerId = @customerId AND Status = @status";
+
+        using (var conn = new SqlConnection(_connectionString))
+        {
+            await conn.OpenAsync();
+            using var cmd = new SqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("@customerId", customerId);
+            cmd.Parameters.AddWithValue("@status", status);
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            while (await reader.ReadAsync())
+            {
+                var order = new Order();
+                order.OrderId = reader.GetInt32(0);
+                order.CustomerId = reader.GetInt32(1);
+                order.Total = reader.GetDecimal(2);
+                order.Status = reader.GetString(3);
+                orders.Add(order);
+            }
+        }
+
+        return orders;
     }
 
     public async Task<decimal> GetTotalSpendAsync(int customerId)
@@ -103,44 +86,49 @@ public class OrderService
         return total;
     }
 
-    public void UpdateOrderStatus(int orderId, string newStatus)
+    public async Task UpdateOrderStatusAsync(int orderId, string newStatus)
     {
-        //Look up current details for this order before updating
-        var (customerId, oldStatus) = GetOrderCustomerAndStatus(orderId);
+        //Look up current details from DB for this order before updating
+        var (customerId, oldStatus) = await GetOrderCustomerAndStatusAsync(orderId);
+
+        if (customerId is null)
+        {
+            //Order does not exist, nothing to update in DB or to invalidate in cache
+            throw new InvalidOperationException($"Order {orderId} was not found.");
+        }
 
 
         string query = "UPDATE Orders SET Status = @newStatus WHERE OrderId = @orderId";
         using (var conn = new SqlConnection(_connectionString))
         {
-            conn.Open();
-            var cmd = new SqlCommand(query, conn);
+            await conn.OpenAsync();
+            using var cmd = new SqlCommand(query, conn);
             cmd.Parameters.AddWithValue("@newStatus", newStatus);
             cmd.Parameters.AddWithValue("@orderId", orderId);
-            cmd.ExecuteNonQuery();
+            await cmd.ExecuteNonQueryAsync();
         }
 
         //Invalidate existing stale value in cache
-        _cache.TryRemove(BuildCacheKey(customerId, oldStatus), out _);
-        _cache.TryRemove(BuildCacheKey(customerId, newStatus), out _);
+        _cache.Remove(BuildCacheKey(customerId.Value, oldStatus!));
+        _cache.Remove(BuildCacheKey(customerId.Value, newStatus));
     }
 
-    private (int CustomerId, string Status) GetOrderCustomerAndStatus(int orderId)
+    private async Task<(int? CustomerId, string? Status)> GetOrderCustomerAndStatusAsync(int orderId)
     {
-        int customerId = 0;
-        string status= "";
+        int? customerId = null;
+        string? status= null;
         string queryCurrentStatus = "SELECT CustomerId, Status FROM Orders where OrderId = @orderId";
         using (var conn = new SqlConnection(_connectionString))
         {
-            conn.Open();
-            var cmd = new SqlCommand(queryCurrentStatus, conn);
+            await conn.OpenAsync();
+            using var cmd = new SqlCommand(queryCurrentStatus, conn);
             cmd.Parameters.AddWithValue("@orderId", orderId);
-            var reader = cmd.ExecuteReader();
+            using var reader = await cmd.ExecuteReaderAsync();
 
-            while (reader.Read())
+            while (await reader.ReadAsync())
             {
                 customerId = reader.GetInt32(0);
                 status = reader.GetString(1);
-
             }
         }
         return (customerId,status);

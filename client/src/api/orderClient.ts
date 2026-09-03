@@ -4,6 +4,7 @@
 import type { Order, OrderStatus } from "../types/order";
 
 const BASE_URL = "https://localhost:5001";
+const DEFAULT_TIMEOUT_MS = 10000; // 10 seconds
 
 
 export type ApiError =
@@ -11,7 +12,9 @@ export type ApiError =
   | { type: "badRequest"; message: string }
   | { type: "notFound"; message: string }
   | { type: "server"; httpStatus: number; message: string }
-  | { type: "parse"; message: string };
+  | { type: "parse"; message: string }
+  | { type: "unauthorized"; message: string }
+  | { type: "forbidden"; message: string };
 
 
 export type RequestState<T> =
@@ -19,6 +22,39 @@ export type RequestState<T> =
   | { status: "loading" }
   | { status: "success"; data: T }
   | { status: "error"; error: ApiError };
+
+
+export type RequestResult<T> = 
+  | {status: "success"; data: T}
+  | {status: "error"; error: ApiError};
+
+
+async function fetchWithTimeout(
+  input: string, 
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+) : Promise<Response> {
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function toTimeoutError(timeoutMs: number): {status: "error", error: ApiError } {
+  return {
+    status: "error", 
+    error: { type: "network", message: `Request timed out after ${timeoutMs}ms`}
+  };
+}
 
 async function toApiError(response: Response): Promise<ApiError> {
   let message = response.statusText;
@@ -37,6 +73,8 @@ async function toApiError(response: Response): Promise<ApiError> {
   }
 
   if (response.status === 400) return { type: "badRequest", message };
+  if (response.status === 401) return { type: "unauthorized", message };
+  if (response.status === 403) return { type: "forbidden", message};
   if (response.status === 404) return { type: "notFound", message };
   return { type: "server", httpStatus: response.status, message };
 }
@@ -63,16 +101,18 @@ function toNetworkError(err: unknown): { status: "error"; error: ApiError } {
 
 export async function getOrdersForCustomer(
   customerId: number,
-  status: OrderStatus
-): Promise<RequestState<Order[]>> {
+  status: OrderStatus,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<RequestResult<Order[]>> {
   let response: Response;
   try {
     const url =
       `${BASE_URL}/api/orders` +
       `?customerId=${encodeURIComponent(customerId)}` +
       `&status=${encodeURIComponent(status)}`;
-    response = await fetch(url);
+    response = await fetchWithTimeout(url, {}, timeoutMs);
   } catch (err) {
+    if (isAbortError(err)) return toTimeoutError(timeoutMs)
     return toNetworkError(err);
   }
 
@@ -95,13 +135,15 @@ export interface TotalSpendResponse {
 
 
 export async function getTotalSpend(
-  customerId: number
-): Promise<RequestState<TotalSpendResponse>> {
+  customerId: number,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<RequestResult<TotalSpendResponse>> {
   let response: Response;
   try {
     const url = `${BASE_URL}/api/customers/${encodeURIComponent(customerId)}/total-spend`;
-    response = await fetch(url);
+    response = await fetchWithTimeout(url, {}, timeoutMs)
   } catch (err) {
+    if (isAbortError(err)) return toTimeoutError(timeoutMs)
     return toNetworkError(err);
   }
 
@@ -120,15 +162,18 @@ export async function getTotalSpend(
 
 export async function updateOrderStatus(
   orderId: number,
-  status: OrderStatus
-): Promise<RequestState<void>> {
+  status: OrderStatus,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<RequestResult<void>> {
   try {
     const url = `${BASE_URL}/api/orders/${encodeURIComponent(orderId)}/status`;
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
-    });
+    },
+    timeoutMs
+  );
 
     if (!response.ok) {
       return { status: "error", error: await toApiError(response) };
@@ -136,6 +181,7 @@ export async function updateOrderStatus(
 
     return { status: "success", data: undefined };
   } catch (err) {
+    if (isAbortError(err)) return toTimeoutError(timeoutMs);
     return toNetworkError(err);
   }
 }

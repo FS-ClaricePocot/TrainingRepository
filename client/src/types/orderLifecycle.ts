@@ -42,5 +42,3 @@ export function transition(order: PendingOrder, to: OrderTransitionMap["Pending"
 
     return { ...base, status: "Cancelled", cancelledAt: new Date().toISOString(), reason};
 }
-
-

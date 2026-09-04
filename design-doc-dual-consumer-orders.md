@@ -20,12 +20,35 @@ for the internal admin tool.
 API key (X-Api-Key) in the request header will be used for the external partner.
 API keys will be revokable and will be stored in a partner registry table. 
 
+#### API Key Lifecycle
+**Provisioning.** Keys are admin-generated (not self-service) through the internal admin tool,
+one key per partner. The raw key is shown to the admin exactly once at creation time — only its
+hash is persisted in the partner registry table, following the same principle as password
+storage, so a database read alone can never leak a usable key.
+ 
+**Rotation.** A partner can be issued a new key without immediately breaking their existing
+integration: the old key is marked `Rotating` (not revoked) and both the old and new key validate
+successfully for a grace period (proposed: 48 hours). After the grace period elapses, the old key is
+automatically revoked. This gives the partner a window to update their stored credential without
+a hard cutover.
+ 
+**Revocation.** Revocation is immediate, not eventual — the partner registry table is the
+single source of truth that is checked on every request (no local caching
+of key validity), so a revoked key stops authenticating on its very next request rather than
+propagating on some delay. Revocation can be triggered manually (support/security action) or
+automatically at the end of a rotation grace period.
+ 
+**States a key can be in:** `Active` → `Rotating` (optional, only during a rotation) →
+`Revoked`. A request presenting a `Revoked` key is treated the same as a missing/invalid key: `401`.
+
 ### Telling them apart
 We register both schemes and use a policy scheme that inspects each incoming request. 
 If X-Api-Key is present, we route it to the API key handler; otherwise we route it to the
 cookie handler and forward it to the appropriate authentication handler. The controller
 and business logic remain identical for both; only the identity resolution differs. 
 Request only reaches the business logic after passing the authentication. 
+If neither auth succeeds due to missing auth or failure, 401 (unauthorized) is returned.
+If the resolved identity lacks permission for the requested resource, 403 (forbidden) is returned.
 
 
 ## Rate Limiting

@@ -68,7 +68,7 @@ export async function getOrdersForCustomer(
   let response: Response;
   try {
     const url =
-      `${BASE_URL}/api/orders` +
+      `${BASE_URL}/api/v1/orders` +
       `?customerId=${encodeURIComponent(customerId)}` +
       `&status=${encodeURIComponent(status)}`;
     response = await fetch(url);

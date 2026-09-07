@@ -46,5 +46,29 @@ namespace OrderManagement.Api.Controllers
                 return StatusCode(500, new { error = "An internal error occurred." });
             }
         }
+
+        [HttpPatch("{orderId}/status")]
+        public async Task<IActionResult> UpdateStatus(int orderId, [FromBody] UpdateOrderStatusRequest request)
+        {
+            if (orderId <= 0 || !OrdersQueryValidator.IsValidStatus(request.Status))
+            {
+                return BadRequest(new { error = "Missing/Invalid orderId or status" });
+            }
+
+            try
+            {
+                await _orderService.UpdateOrderStatusAsync(orderId, request.Status);
+                return NoContent();
+            }
+            catch (InvalidOperationException)
+            {
+                return NotFound(new { error = $"Order {orderId} was not found." });
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "Failure while updating status for order {orderId}", orderId);
+                return StatusCode(500, new { error = "An internal error occurred." });
+            }
+        }
     }
 }

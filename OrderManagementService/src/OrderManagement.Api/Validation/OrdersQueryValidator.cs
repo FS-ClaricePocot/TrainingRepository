@@ -9,8 +9,14 @@ namespace OrderManagement.Api.Validation
     {
         public static bool IsValid(int customerId, string status)
         {
-            return customerId > 0
-                && !string.IsNullOrEmpty(status)
+            return customerId > 0 && IsValidStatus(status);
+        }
+
+        // Split out so PATCH .../status (which has no customerId to check)
+        // can reuse the same status rule instead of duplicating it.
+        public static bool IsValidStatus(string status)
+        {
+            return !string.IsNullOrEmpty(status)
                 && Enum.IsDefined(typeof(OrderStatus), status);
         }
     }

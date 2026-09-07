@@ -1,19 +1,13 @@
+﻿using Microsoft.AspNetCore.Authentication.Cookies;
+using OrderManagement.Api.Auth;
 using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.RateLimiting;
-using OrderManagement.Api.Auth;
 
 namespace OrderManagement.Api.RateLimiting
 {
     public static class RateLimitPolicyNames
     {
-        // One policy attached to every dual-consumer endpoint. It branches
-        // internally by resolved identity rather than having two separate
-        // named policies, because the same action (e.g. GET orders) serves
-        // both partner and admin traffic - there's no separate endpoint to
-        // hang a second policy off of.
         public const string OrdersApi = "OrdersApi";
     }
 
@@ -32,13 +26,15 @@ namespace OrderManagement.Api.RateLimiting
                 {
                     if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                     {
-                        context.HttpContext.Response.Headers.RetryAfter =
-                            ((int)retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
+                        context.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
                     }
 
                     context.HttpContext.Response.ContentType = "application/json";
                     await context.HttpContext.Response.WriteAsJsonAsync(
-                        new { error = "Rate limit exceeded. Please retry later." },
+                        new
+                        {
+                            error = "Rate limit exceeded. Please retry later."
+                        },
                         cancellationToken);
                 };
 
@@ -48,25 +44,23 @@ namespace OrderManagement.Api.RateLimiting
 
                     var isAdmin = identity is { IsAuthenticated: true }
                         && identity.AuthenticationType == CookieAuthenticationDefaults.AuthenticationScheme;
+
                     if (isAdmin)
                     {
                         var adminId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                             ?? identity!.Name
                             ?? "unknown-admin";
-                        return RateLimitPartition.GetFixedWindowLimiter(
-                            $"admin:{adminId}",
-                            _ => ToFixedWindowOptions(settings.InternalPolicy));
+                        return RateLimitPartition.GetFixedWindowLimiter($"admin:{adminId}", _ => ToFixedWindowOptions(settings.InternalPolicy));
                     }
 
                     var isPartner = identity is { IsAuthenticated: true }
                         && identity.AuthenticationType == ApiKeyAuthConstants.SchemeName;
+
                     if (isPartner)
                     {
                         var partnerId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                             ?? "unknown-partner";
-                        return RateLimitPartition.GetFixedWindowLimiter(
-                            $"partner:{partnerId}",
-                            _ => ToFixedWindowOptions(settings.PartnerPolicy));
+                        return RateLimitPartition.GetFixedWindowLimiter($"partner:{partnerId}", _ => ToFixedWindowOptions(settings.PartnerPolicy));
                     }
 
                     // [Authorize] enforcement isn't wired onto the controllers yet (separate,
@@ -75,12 +69,14 @@ namespace OrderManagement.Api.RateLimiting
                     // instead of defaulting to the generous internal ceiling - an unresolved
                     // identity should never get the loose admin allowance.
                     var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                    return RateLimitPartition.GetFixedWindowLimiter(
-                        $"anonymous:{remoteIp}",
-                        _ => ToFixedWindowOptions(settings.PartnerPolicy));
+
+                    return RateLimitPartition.GetFixedWindowLimiter($"anonymous:{remoteIp}", _ => ToFixedWindowOptions(settings.PartnerPolicy));
+
                 });
+
             });
         }
+
 
         private static FixedWindowRateLimiterOptions ToFixedWindowOptions(RateLimitPolicySettings settings) => new()
         {
@@ -91,3 +87,4 @@ namespace OrderManagement.Api.RateLimiting
         };
     }
 }
+    

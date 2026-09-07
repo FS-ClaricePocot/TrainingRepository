@@ -16,8 +16,7 @@ namespace OrderManagement.Api.Validation
         // can reuse the same status rule instead of duplicating it.
         public static bool IsValidStatus(string status)
         {
-            return !string.IsNullOrEmpty(status)
-                && Enum.IsDefined(typeof(OrderStatus), status);
+            return !string.IsNullOrEmpty(status) && Enum.IsDefined(typeof(OrderStatus), status);
         }
     }
 }

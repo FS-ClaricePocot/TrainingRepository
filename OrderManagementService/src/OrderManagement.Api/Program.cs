@@ -25,14 +25,15 @@ builder.Services
         //TODO: configurations for cookie name, expiry, etc. for internal admin tool
     })
     .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
-        ApiKeyAuthConstants.SchemeName, options => 
-    { 
+        ApiKeyAuthConstants.SchemeName, options =>
+    {
         //TODO: configurations for external partner apikey here
     });
 
 
 builder.Services.AddOrderApiAuthorization();
 builder.Services.AddOrderApiRateLimiting(builder.Configuration);
+
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -75,9 +76,6 @@ app.UseAuthentication();
 
 app.UseAuthorization();
 
-// Placed after UseAuthorization (not before) because the OrdersApi policy's
-// partitioner reads HttpContext.User to branch by resolved identity - it
-// needs authentication/authorization to have already run for this request.
 app.UseRateLimiter();
 
 app.MapControllers();

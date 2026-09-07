@@ -51,7 +51,7 @@ namespace OrderManagement.Api.Controllers
         }
 
         [HttpPatch("{orderId}/status")]
-        public async Task<IActionResult> UpdateStatus(int orderId, [FromBody] UpdateOrderStatusRequest request)
+        public async Task<IActionResult> UpdateOrderStatus(int orderId, [FromBody] UpdateOrderStatusRequest request)
         {
             if (orderId <= 0 || !OrdersQueryValidator.IsValidStatus(request.Status))
             {

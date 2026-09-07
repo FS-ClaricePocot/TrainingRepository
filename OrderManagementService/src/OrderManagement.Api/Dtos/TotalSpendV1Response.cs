@@ -1,4 +1,4 @@
-namespace OrderManagement.Api.Dtos
+﻿namespace OrderManagement.Api.Dtos
 {
     public class TotalSpendV1Response
     {

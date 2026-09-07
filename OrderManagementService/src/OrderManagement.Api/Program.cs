@@ -42,7 +42,20 @@ var connectionString = builder.Configuration.GetConnectionString("OrderManagemen
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton(sp => new OrderService(connectionString, sp.GetRequiredService<IMemoryCache>()));
 
-builder.Services.AddCors(options => options.AddDefaultPolicy(p => p.WithOrigins("http://localhost:5173").AllowAnyMethod().AllowAnyHeader()));
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(options => options.AddDefaultPolicy(p => p
+    .WithOrigins("http://localhost:5173")
+    .AllowAnyMethod()
+    .AllowAnyHeader()));
+}
+else
+{
+    builder.Services.AddCors(options => options.AddDefaultPolicy(p => p
+    .WithMethods("GET")
+    .WithHeaders("Content-Type", "Authorization")));
+}
 
 var app = builder.Build();
 

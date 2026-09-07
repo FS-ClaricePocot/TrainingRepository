@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Caching.Memory;
 using OrderManagement.Api.Auth;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,6 +29,7 @@ builder.Services
         //TODO: configurations for external partner apikey here
     });
 
+
 builder.Services.AddOrderApiAuthorization();
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -37,7 +39,8 @@ builder.Services.AddEndpointsApiExplorer();
 var connectionString = builder.Configuration.GetConnectionString("OrderManagementDb")
     ?? throw new InvalidOperationException("Missing ConnectionStrings:OrderManagementDb.");
 
-builder.Services.AddSingleton(new OrderService(connectionString));
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton(sp => new OrderService(connectionString, sp.GetRequiredService<IMemoryCache>()));
 
 builder.Services.AddCors(options => options.AddDefaultPolicy(p => p.WithOrigins("http://localhost:5173").AllowAnyMethod().AllowAnyHeader()));
 

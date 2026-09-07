@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Caching.Memory;
 using OrderManagement.Api.Auth;
+using OrderManagement.Api.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,7 @@ builder.Services
 
 
 builder.Services.AddOrderApiAuthorization();
+builder.Services.AddOrderApiRateLimiting(builder.Configuration);
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -72,6 +74,11 @@ app.UseCors();
 app.UseAuthentication();
 
 app.UseAuthorization();
+
+// Placed after UseAuthorization (not before) because the OrdersApi policy's
+// partitioner reads HttpContext.User to branch by resolved identity - it
+// needs authentication/authorization to have already run for this request.
+app.UseRateLimiter();
 
 app.MapControllers();
 

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Caching.Memory;
 using OrderManagement.Api.Auth;
 using OrderManagement.Api.RateLimiting;
+using OrderManagement.Api.Reports;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,6 +57,9 @@ var connectionString = builder.Configuration.GetConnectionString("OrderManagemen
 
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton(sp => new OrderService(connectionString, sp.GetRequiredService<IMemoryCache>()));
+builder.Services.AddSingleton<ReportJobQueue>();
+builder.Services.AddSingleton(sp => new ReportService(connectionString, sp.GetRequiredService<IMemoryCache>(), sp.GetRequiredService<ReportJobQueue>()));
+builder.Services.AddHostedService<ReportGenerationWorker>();
 
 
 if (builder.Environment.IsDevelopment())

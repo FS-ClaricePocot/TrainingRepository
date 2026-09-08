@@ -55,8 +55,15 @@ namespace OrderManagement.Api.Auth
 
         private (string PartnerId, string Name)? ValidateApiKey(string apiKey)
         {
-            // TODO: replace with actual validation against a partner registry
-            return null;
+            // TEST-ONLY, not a real registry look-up
+            // this exists purely so the DualConsumer policy's partner path can be verified end-to-end
+            // with a real request.
+            // TODO: Replace with an actual partner-registry lookup as per design doc when feature is scoped
+            return apiKey switch
+            {
+                "test-partner-key-1" => ("partner-1", "Test Partner One"),
+                _ => null
+            };
         }
     }
 }

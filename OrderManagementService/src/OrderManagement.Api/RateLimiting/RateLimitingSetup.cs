@@ -50,7 +50,7 @@ namespace OrderManagement.Api.RateLimiting
                         var adminId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                             ?? identity!.Name
                             ?? "unknown-admin";
-                        return RateLimitPartition.GetFixedWindowLimiter($"admin:{adminId}", _ => ToFixedWindowOptions(settings.InternalPolicy));
+                        return RateLimitPartition.GetNoLimiter($"admin:{adminId}");
                     }
 
                     var isPartner = identity is { IsAuthenticated: true }
@@ -66,8 +66,8 @@ namespace OrderManagement.Api.RateLimiting
                     // [Authorize] enforcement isn't wired onto the controllers yet (separate,
                     // still-pending task), so requests can still reach here unauthenticated.
                     // Fall back to the stricter partner-level limits, partitioned by IP,
-                    // instead of defaulting to the generous internal ceiling - an unresolved
-                    // identity should never get the loose admin allowance.
+                    // instead of defaulting to exempted - an unresolved identity
+                    // should never get the loose admin allowance.
                     var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                     return RateLimitPartition.GetFixedWindowLimiter($"anonymous:{remoteIp}", _ => ToFixedWindowOptions(settings.PartnerPolicy));

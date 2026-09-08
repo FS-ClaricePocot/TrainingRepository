@@ -23,6 +23,18 @@ builder.Services
     .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
     {
         //TODO: configurations for cookie name, expiry, etc. for internal admin tool
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+
     })
     .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
         ApiKeyAuthConstants.SchemeName, options =>

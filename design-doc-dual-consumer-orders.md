@@ -56,7 +56,7 @@ Rate limiting is partitioned by consumer identity - API key for external partner
 and user/tenantID for internal admin. Two policies named via Microsoft.AspNetCore.RateLimiting:
 * PartnerPolicy - uses fixed window with limits set appropriate to the partner. 
 Should be specified in the config and not hardcoded so it's flexible to changes on partner policy.
-* InternalPolicy - has high ceiling for limits/exempted
+* InternalPolicy - fully exempt. Internal admin traffic is not subject to rate limiting.
 
 Throttled requests return 429 with a Retry-After header. 
 
@@ -81,6 +81,4 @@ After the sunset date, the old version returns 410 Gone with a pointer to the cu
 Bad requests return 400 with an error field on the message that the integrating parties can act on.
 Verbose and explicit message for the internal admin and generic message for the external partner for security. 
 
-## Open Questions
-Should there be specific limits set for the internal admin? I just stated it to high limits/exempted for now.  
 

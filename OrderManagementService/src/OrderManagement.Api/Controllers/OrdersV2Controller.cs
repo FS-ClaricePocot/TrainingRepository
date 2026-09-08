@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using OrderManagement.Api.Auth;
 using OrderManagement.Api.Dtos;
 using OrderManagement.Api.RateLimiting;
 using OrderManagement.Api.Validation;
@@ -9,6 +11,7 @@ namespace OrderManagement.Api.Controllers
     [ApiController]
     [Route("api/v2/orders")]
     [EnableRateLimiting(RateLimitPolicyNames.OrdersApi)]
+    [Authorize(Policy = AuthorizationPolicyNames.DualConsumer)]
     public class OrdersV2Controller : ControllerBase
     {
         private readonly OrderService _orderService;

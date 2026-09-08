@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using Microsoft.AspNetCore.Authentication.Cookies;
+using System.Runtime.CompilerServices;
 
 namespace OrderManagement.Api.Auth
 {
@@ -6,6 +7,7 @@ namespace OrderManagement.Api.Auth
     {
         public const string InternalAdmin = "InternalAdmin";
         public const string Partner = "Partner";
+        public const string DualConsumer = "DualConsumer";
     }
     public static class AuthorizationPolicies
     {
@@ -23,6 +25,13 @@ namespace OrderManagement.Api.Auth
 
                 options.AddPolicy(AuthorizationPolicyNames.Partner, policy =>
                 {
+                    policy.AuthenticationSchemes.Add(ApiKeyAuthConstants.SchemeName);
+                    policy.RequireAuthenticatedUser();
+                });
+
+                options.AddPolicy(AuthorizationPolicyNames.DualConsumer, policy =>
+                {
+                    policy.AuthenticationSchemes.Add(CookieAuthenticationDefaults.AuthenticationScheme);
                     policy.AuthenticationSchemes.Add(ApiKeyAuthConstants.SchemeName);
                     policy.RequireAuthenticatedUser();
                 });

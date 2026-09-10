@@ -4,6 +4,8 @@ using Microsoft.Extensions.Caching.Memory;
 using OrderManagement.Api.Auth;
 using OrderManagement.Api.RateLimiting;
 using OrderManagement.Api.Reports;
+using OrderManagement.Core;
+using OrderManagement.Core.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,7 +58,8 @@ var connectionString = builder.Configuration.GetConnectionString("OrderManagemen
     ?? throw new InvalidOperationException("Missing ConnectionStrings:OrderManagementDb.");
 
 builder.Services.AddMemoryCache();
-builder.Services.AddSingleton(sp => new OrderService(connectionString, sp.GetRequiredService<IMemoryCache>()));
+builder.Services.AddSingleton<IOrderRepository>(new SqlOrderRepository(connectionString));
+builder.Services.AddSingleton(sp => new OrderService(sp.GetRequiredService<IOrderRepository>(), sp.GetRequiredService<IMemoryCache>()));
 builder.Services.AddSingleton<ReportJobQueue>();
 builder.Services.AddSingleton(sp => new ReportService(connectionString, sp.GetRequiredService<IMemoryCache>(), sp.GetRequiredService<ReportJobQueue>()));
 builder.Services.AddHostedService<ReportGenerationWorker>();

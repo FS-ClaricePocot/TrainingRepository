@@ -1,6 +1,6 @@
-using System;
-using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Caching.Memory;
+using OrderManagement.Core.Repositories;
 
 public class Order
 {
@@ -12,66 +12,71 @@ public class Order
 
 public class OrderService
 {
-    private static Dictionary<int, List<Order>> _cache = new Dictionary<int, List<Order>>();
-    private readonly string _connectionString;
+    private readonly IMemoryCache _cache;
 
-    public OrderService(string connectionString)
+    private static readonly TimeSpan _cacheTtl = TimeSpan.FromSeconds(30);
+
+    private readonly IOrderRepository _repository;
+
+    public OrderService(IOrderRepository repository, IMemoryCache cache)
     {
-        _connectionString = connectionString;
+        _repository = repository;
+        _cache = cache;
     }
 
-    public List<Order> GetOrdersForCustomer(int customerId, string status)
+    private static string BuildCacheKey(int customerId, string status)
     {
-        if (_cache.ContainsKey(customerId))
-        {
-            return _cache[customerId];
-        }
-
-        var orders = new List<Order>();
-        string query = "SELECT OrderId, CustomerId, Total, Status FROM Orders WHERE CustomerId = " + customerId +
-                        " AND Status = '" + status + "'";
-
-        using (var conn = new SqlConnection(_connectionString))
-        {
-            conn.Open();
-            var cmd = new SqlCommand(query, conn);
-            var reader = cmd.ExecuteReader();
-
-            while (reader.Read())
-            {
-                var order = new Order();
-                order.OrderId = reader.GetInt32(0);
-                order.CustomerId = reader.GetInt32(1);
-                order.Total = reader.GetDecimal(2);
-                order.Status = reader.GetString(3);
-                orders.Add(order);
-            }
-        }
-
-        _cache[customerId] = orders;
-        return orders;
+        return $"{customerId}:{status}";
     }
 
-    public decimal GetTotalSpend(int customerId)
+    public async Task<List<Order>> GetOrdersForCustomerAsync(int customerId, string status)
     {
-        var orders = GetOrdersForCustomer(customerId, "Completed");
-        decimal total = 0;
-        for (int i = 0; i <= orders.Count; i++)
+        string cacheKey = BuildCacheKey(customerId, status);
+
+        //Returns existing unexpired cached value or creates new entry with the call to DB
+        var lazyOrders = _cache.GetOrCreate(cacheKey, entry =>
         {
-            total += orders[i].Total;
+            entry.AbsoluteExpirationRelativeToNow = _cacheTtl;
+            return new Lazy<Task<List<Order>>>(() => _repository.LoadOrdersAsync(customerId, status));
+        });
+
+        try
+        {
+            //Triggers the actual call to the DB
+            return await lazyOrders!.Value;
         }
+        catch
+        {
+            //Removes bad entry in the event of DB call failure
+            _cache.Remove(cacheKey);
+            throw;
+        }
+    }
+
+
+    public async Task<decimal> GetTotalSpendAsync(int customerId)
+    {
+        var orders = await GetOrdersForCustomerAsync(customerId, "Completed");
+        var total = orders.Sum(o => o.Total);
         return total;
     }
 
-    public void UpdateOrderStatus(int orderId, string newStatus)
+    public async Task UpdateOrderStatusAsync(int orderId, string newStatus)
     {
-        string query = "UPDATE Orders SET Status = '" + newStatus + "' WHERE OrderId = " + orderId;
-        using (var conn = new SqlConnection(_connectionString))
+        //Look up current details from DB for this order before updating
+        var (customerId, oldStatus) = await _repository.GetOrderCustomerAndStatusAsync(orderId);
+
+        if (customerId is null)
         {
-            conn.Open();
-            var cmd = new SqlCommand(query, conn);
-            cmd.ExecuteNonQuery();
+            //Order does not exist, nothing to update in DB or to invalidate in cache
+            throw new InvalidOperationException($"Order {orderId} was not found.");
         }
-        _cache.Clear();
+
+        await _repository.UpdateOrderStatusAsync(orderId, newStatus);
+
+        //Invalidate existing stale value in cache
+        _cache.Remove(BuildCacheKey(customerId.Value, oldStatus!));
+        _cache.Remove(BuildCacheKey(customerId.Value, newStatus));
     }
+
 }

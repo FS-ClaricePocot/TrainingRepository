@@ -1,4 +1,4 @@
-﻿namespace OrderManagement.Core.Enums
+namespace OrderManagement.Core.Enums
 {
     public enum OrderStatus
     {

@@ -1,26 +1,26 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using OrderManagement.Core.Enums;
+using Microsoft.AspNetCore.Mvc;
+using OrderManagement.Api.Dtos;
+using OrderManagement.Api.Validation;
 
 namespace OrderManagement.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
-    public class OrdersController : ControllerBase
+    [Route("api/v2/orders")]
+    public class OrdersV2Controller : ControllerBase
     {
         private readonly OrderService _orderService;
-        private readonly ILogger _logger;
+        private readonly ILogger<OrdersV2Controller> _logger;
 
-        public OrdersController(OrderService orderService, ILogger<OrdersController> logger)
+        public OrdersV2Controller(OrderService orderService, ILogger<OrdersV2Controller> logger)
         {
             _orderService = orderService;
             _logger = logger;
         }
 
-        //GET api/orders/?customerId=1&status="Completed"
         [HttpGet]
         public async Task<IActionResult> Get([FromQuery] int customerId, [FromQuery] string status)
         {
-            if (customerId <= 0 || string.IsNullOrEmpty(status) || !Enum.IsDefined(typeof(OrderStatus), status))
+            if (!OrdersQueryValidator.IsValid(customerId, status))
             {
                 return BadRequest(new { error = "Missing/Invalid customerId or status" });
             }
@@ -28,7 +28,17 @@ namespace OrderManagement.Api.Controllers
             try
             {
                 var orders = await _orderService.GetOrdersForCustomerAsync(customerId, status);
-                return Ok(orders);
+
+                var response = orders.Select(o => new OrderV2Response
+                {
+                    OrderId = o.OrderId,
+                    CustomerId = o.CustomerId,
+                    Total = o.Total,
+                    Status = o.Status,
+                    // TODO: populate real v2-only fields once scoped.
+                }).ToList();
+
+                return Ok(response);
             }
             catch (Exception exception)
             {
@@ -36,6 +46,5 @@ namespace OrderManagement.Api.Controllers
                 return StatusCode(500, new { error = "An internal error occurred." });
             }
         }
-
     }
 }

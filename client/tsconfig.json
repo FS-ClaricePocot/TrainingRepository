@@ -14,6 +14,16 @@
     "moduleDetection": "force",
     "noEmit": true,
 
+    /* Strictness - required for this exercise */
+    "strict": true,                 // turns on all of the below as a bundle
+    "noImplicitAny": true,          // no silently-typed `any` parameters
+    "strictNullChecks": true,       // null/undefined must be opted into via unions
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,

@@ -9,6 +9,7 @@ namespace OrderManagement.Api.Reports
         private readonly string _connectionString;
         private readonly IMemoryCache _jobStore;
         private readonly ReportJobQueue _queue;
+        private readonly ILogger<ReportService> _logger;
 
         // how long a completed/failed jobs record stary retrievable
         private static readonly TimeSpan _jobRetention = TimeSpan.FromMinutes(10);
@@ -17,20 +18,27 @@ namespace OrderManagement.Api.Reports
         // Currently, real query with 50k rows only takes ~126ms
         public static readonly TimeSpan _simulatedProcessingDelay = TimeSpan.FromSeconds(5);
 
-        public ReportService(string connectionString, IMemoryCache jobStore, ReportJobQueue queue)
+        public ReportService(string connectionString, IMemoryCache jobStore, ReportJobQueue queue, ILogger<ReportService> logger)
         {
             _connectionString = connectionString;
             _jobStore = jobStore;
             _queue = queue;
+            _logger = logger;
         }
 
-        public async Task<Guid> QueueReportAsync(string groupBy)
+        public Task<Guid?> QueueReportAsync(string groupBy)
         {
             var jobId = Guid.NewGuid();
+            var request = new ReportJobRequest(jobId, groupBy);
+            if (!_queue.TryEnqueue(request))
+            {
+                // Queue at capacity - don't  create a Pending record for a job that's not queued
+                return Task.FromResult<Guid?>(null);
+            }
+
             _jobStore.Set(jobId, new ReportJobRecord { Status = ReportJobStatus.Pending }, _jobRetention);
 
-            await _queue.EnqueueAsync(new ReportJobRequest(jobId, groupBy));
-            return jobId;
+            return Task.FromResult<Guid?>(jobId);
         }
 
         public ReportJobRecord? GetJob(Guid jobId)
@@ -55,8 +63,9 @@ namespace OrderManagement.Api.Reports
                     Result = result
                 }, _jobRetention);
             }
-            catch (Exception)
+            catch (Exception exception)
             {
+                _logger.LogError(exception, "Error processing report for job {jobId}", jobId);
                 _jobStore.Set(jobId, new ReportJobRecord
                 {
                     Status = ReportJobStatus.Failed,
@@ -100,7 +109,6 @@ namespace OrderManagement.Api.Reports
             var results = new List<ReportGroupResult>();
             string query = @"SELECT o.Status, COUNT(*) AS OrderCount, SUM(o.Total) AS TotalSum 
                              FROM Orders o
-                             JOIN Customers c ON o.CustomerId = c.CustomerId
                              GROUP BY o.Status";
 
             using var conn = new SqlConnection(_connectionString);

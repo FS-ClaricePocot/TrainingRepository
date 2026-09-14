@@ -50,6 +50,8 @@ namespace OrderManagement.Api.RateLimiting
                         var adminId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
                             ?? identity!.Name
                             ?? "unknown-admin";
+
+                        RateLimitingMetrics.AdminRequests.Add(1, new KeyValuePair<string, object?>("adminId", adminId));
                         return RateLimitPartition.GetNoLimiter($"admin:{adminId}");
                     }
 

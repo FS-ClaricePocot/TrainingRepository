@@ -31,8 +31,7 @@ namespace OrderManagement.Api.Auth
 
                 options.AddPolicy(AuthorizationPolicyNames.DualConsumer, policy =>
                 {
-                    policy.AuthenticationSchemes.Add(CookieAuthenticationDefaults.AuthenticationScheme);
-                    policy.AuthenticationSchemes.Add(ApiKeyAuthConstants.SchemeName);
+                    policy.AuthenticationSchemes.Add("Selector");
                     policy.RequireAuthenticatedUser();
                 });
             });

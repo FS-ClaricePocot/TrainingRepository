@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.Extensions.Caching.Memory;
 using OrderManagement.Api.Auth;
+using OrderManagement.Api.Partners;
 using OrderManagement.Api.RateLimiting;
 using OrderManagement.Api.Reports;
 using OrderManagement.Core;
@@ -61,8 +62,9 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IOrderRepository>(new SqlOrderRepository(connectionString));
 builder.Services.AddSingleton(sp => new OrderService(sp.GetRequiredService<IOrderRepository>(), sp.GetRequiredService<IMemoryCache>()));
 builder.Services.AddSingleton<ReportJobQueue>();
-builder.Services.AddSingleton(sp => new ReportService(connectionString, sp.GetRequiredService<IMemoryCache>(), sp.GetRequiredService<ReportJobQueue>()));
+builder.Services.AddSingleton(sp => new ReportService(connectionString, sp.GetRequiredService<IMemoryCache>(), sp.GetRequiredService<ReportJobQueue>(), sp.GetRequiredService<ILogger<ReportService>>()));
 builder.Services.AddSingleton<IReportService>(sp => sp.GetRequiredService<ReportService>());
+builder.Services.AddSingleton<IPartnerRepository>(new SqlPartnerRepository(connectionString));
 builder.Services.AddHostedService<ReportGenerationWorker>();
 
 

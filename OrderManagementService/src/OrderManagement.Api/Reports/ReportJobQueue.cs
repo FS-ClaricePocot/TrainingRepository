@@ -4,10 +4,18 @@ namespace OrderManagement.Api.Reports
 {
     public class ReportJobQueue
     {
-        private readonly Channel<ReportJobRequest> _channel = Channel.CreateUnbounded<ReportJobRequest>();
-        public ValueTask EnqueueAsync(ReportJobRequest request, CancellationToken cancellationToken = default)
+        // Bounded so a burst of report requests can't grow memory without limit
+        private const int MaxQueueDepth = 100;
+        private readonly Channel<ReportJobRequest> _channel = Channel.CreateBounded<ReportJobRequest>(
+            new BoundedChannelOptions(MaxQueueDepth)
+            {
+                FullMode = BoundedChannelFullMode.Wait
+            });
+
+        // Non-blocking - returns false immediately if the queue is at capacity
+        public bool TryEnqueue(ReportJobRequest request)
         {
-            return _channel.Writer.WriteAsync(request, cancellationToken);
+            return _channel.Writer.TryWrite(request);
         }
 
         public IAsyncEnumerable<ReportJobRequest> DequeueAllAsync(CancellationToken cancellationToken)

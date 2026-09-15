@@ -2,6 +2,7 @@
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
+using OrderManagement.Api.Partners;
 
 namespace OrderManagement.Api.Auth
 {
@@ -16,54 +17,69 @@ namespace OrderManagement.Api.Auth
 
     }
 
-    // Draft of class that validates X-Api-Key header against a partner registry
     public class ApiKeyAuthenticationHandler: AuthenticationHandler<ApiKeyAuthenticationSchemeOptions>
     {
+        private readonly IPartnerRepository _partnerRepository;
+
+        // Both the old key (Rotating) and new key (Active) validate within this window
+        private static readonly TimeSpan _rotationGracePeriod = TimeSpan.FromHours(48);
         public ApiKeyAuthenticationHandler(IOptionsMonitor<ApiKeyAuthenticationSchemeOptions> options,
                                            ILoggerFactory logger,
-                                           UrlEncoder encoder): base(options, logger, encoder)
+                                           UrlEncoder encoder,
+                                           IPartnerRepository partnerRepository): base(options, logger, encoder)
         {
-
+            _partnerRepository = partnerRepository;
         }
 
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             if(!Request.Headers.TryGetValue(ApiKeyAuthConstants.HeaderName, out var providedKey) || string.IsNullOrWhiteSpace(providedKey))
             {
-                return Task.FromResult(AuthenticateResult.Fail($"Missing {ApiKeyAuthConstants.HeaderName} header."));
+                return AuthenticateResult.Fail($"Missing {ApiKeyAuthConstants.HeaderName} header.");
             }
 
-            var partner = ValidateApiKey(providedKey!);
+            var partner = await ValidateApiKeyAsync(providedKey!);
             if (partner is null)
             {
-                return Task.FromResult(AuthenticateResult.Fail($"Invalid API key"));
+                return AuthenticateResult.Fail("Invalid API Key");
             }
 
             var claims = new[]
             {
-                new Claim(ClaimTypes.NameIdentifier, partner.Value.PartnerId),
-                new Claim("partner_name", partner.Value.Name)
+                new Claim(ClaimTypes.NameIdentifier, partner.PartnerId),
+                new Claim("partner_name", partner.Name)
             };
 
             var identity = new ClaimsIdentity(claims, ApiKeyAuthConstants.SchemeName);
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, ApiKeyAuthConstants.SchemeName);
 
-            return Task.FromResult(AuthenticateResult.Success(ticket));
+            return AuthenticateResult.Success(ticket);
 
         }
 
-        private (string PartnerId, string Name)? ValidateApiKey(string apiKey)
+        private async Task<ValidatedPartner?> ValidateApiKeyAsync(string apiKey)
         {
-            // TEST-ONLY, not a real registry look-up
-            // this exists purely so the DualConsumer policy's partner path can be verified end-to-end
-            // with a real request.
-            // TODO: Replace with an actual partner-registry lookup as per design doc when feature is scoped
-            return apiKey switch
+            var hashedKey = ApiKeyHasher.Hash(apiKey);
+            var key = await _partnerRepository.FindByHashedKeyAsync(hashedKey);
+
+            if (key is null || key.Status == PartnerKeyStatus.Revoked)
             {
-                "test-partner-key-1" => ("partner-1", "Test Partner One"),
-                _ => null
-            };
+                return null;
+            }
+
+            if (key.Status == PartnerKeyStatus.Rotating)
+            {
+                var graceExpiry = key.RotatingSince!.Value.Add(_rotationGracePeriod);
+                if (DateTime.UtcNow > graceExpiry)
+                {
+                    // if grace period elapsed, treat the same as Revoked
+                    return null;
+                }
+            }
+
+            var partner = await _partnerRepository.GetPartnerAsync(key.PartnerId);
+            return partner is null ? null : new ValidatedPartner(partner.PartnerId.ToString(), partner.Name);
         }
     }
 }

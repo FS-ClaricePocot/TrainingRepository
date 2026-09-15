@@ -1,6 +1,6 @@
 ﻿namespace OrderManagement.Core.Repositories
 {
-    // Data-access seam for OrderService. Lets tests substiture a mock for the SQL calls
+    // Data-access seam for OrderService. Lets tests substitute a mock for the SQL calls
     // so caching / invalidation logic stays unit-testable
     public interface IOrderRepository
     {

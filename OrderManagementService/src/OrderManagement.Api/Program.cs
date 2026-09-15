@@ -62,6 +62,7 @@ builder.Services.AddSingleton<IOrderRepository>(new SqlOrderRepository(connectio
 builder.Services.AddSingleton(sp => new OrderService(sp.GetRequiredService<IOrderRepository>(), sp.GetRequiredService<IMemoryCache>()));
 builder.Services.AddSingleton<ReportJobQueue>();
 builder.Services.AddSingleton(sp => new ReportService(connectionString, sp.GetRequiredService<IMemoryCache>(), sp.GetRequiredService<ReportJobQueue>()));
+builder.Services.AddSingleton<IReportService>(sp => sp.GetRequiredService<ReportService>());
 builder.Services.AddHostedService<ReportGenerationWorker>();
 
 

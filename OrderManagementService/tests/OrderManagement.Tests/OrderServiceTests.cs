@@ -1,23 +1,19 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
-using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 using Moq;
 using OrderManagement.Core.Repositories;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace OrderManagement.Tests
 {
     public class OrderServiceTests
     {
-        private const string _unusedConnectionString = "Server=localhost;Database=OrderManagement;User Id=admin;Password=Password;";
 
         [Fact]
         public async Task GetOrdersForCustomerAsync_WhenCacheAlreadyPopulated_ReturnsCachedValueWithoutDbCall()
         {
             // Arrange
             var cache = new MemoryCache(new MemoryCacheOptions());
-            var service = new OrderService(Mock.Of<IOrderRepository>(), cache);
+            var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+            var service = new OrderService(repo.Object, cache);
 
             const int customerId = 1;
             const string status = "Completed";
@@ -29,7 +25,7 @@ namespace OrderManagement.Tests
 
             cache.Set(
                 $"{customerId}:{status}",
-                new Lazy<Task<List<Order>>>(() => Task.FromResult(cachedOrders)));
+                cachedOrders);
 
             // Act
             var result = await service.GetOrdersForCustomerAsync(customerId, status);
@@ -37,6 +33,8 @@ namespace OrderManagement.Tests
             // Assert
             Assert.Single(result);
             Assert.Equal(1, result[0].OrderId);
+            //Makes sure that values are truly retrieved from cache and no calls are made to the DB
+            repo.Verify(r => r.LoadOrdersAsync(It.IsAny<int>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -72,6 +70,69 @@ namespace OrderManagement.Tests
         }
 
         [Fact]
+        public async Task GetOrdersForCustomerAsync_ConcurrentCallsForSameKey_OnlyCallsRepoOnce()
+        {
+            // Arrange
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+            var callCount = 0;
+
+            repo.Setup(r => r.LoadOrdersAsync(1, "Completed"))
+                .Returns(async () =>
+                {
+                    Interlocked.Increment(ref callCount);
+                    await Task.Delay(50); // simulate DB latency so calls overlap
+                    return new List<Order>
+                    {
+                        new() { OrderId = 1, CustomerId = 1, Total = 100m, Status = "Completed" }
+                    };
+                });
+
+            var service = new OrderService(repo.Object, cache);
+
+            // Act
+            // Fire 20 concurrent requests for the exact same key.
+            var tasks = Enumerable.Range(0, 20).Select(_ => Task.Run(() => service.GetOrdersForCustomerAsync(1, "Completed")));
+            var results = await Task.WhenAll(tasks);
+
+            // Assert
+            // Every caller should get a result but the repo should only be hit once
+            Assert.All(results, r => Assert.Single(r));
+            Assert.Equal(1, callCount);
+            repo.Verify(r => r.LoadOrdersAsync(1, "Completed"), Times.Once);
+
+        }
+
+        [Fact]
+        public async Task GetOrdersForCustomerAsync_WhenRepoThrows_RemovesCacheEntrySoNextCallRetries()
+        {
+            // Arrange
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+            var goodOrders = new List<Order> { new() { OrderId = 1, CustomerId = 1, Total = 100m, Status = "Completed" } };
+
+            repo.SetupSequence(r => r.LoadOrdersAsync(1, "Completed"))
+                .ThrowsAsync(new InvalidOperationException("simulated DB failure"))
+                .ReturnsAsync(goodOrders);
+
+            var service = new OrderService(repo.Object, cache);
+
+            // Act & Assert
+            // first call fails and throws exception
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => service.GetOrdersForCustomerAsync(1, "Completed"));
+
+            // If the failed entry was not removed, this would throw the idential exception
+            // instead of retrying against the repo
+            var result = await service.GetOrdersForCustomerAsync(1, "Completed");
+
+            Assert.Single(result);
+            repo.Verify(r => r.LoadOrdersAsync(1, "Completed"), Times.Exactly(2));
+        }
+
+          
+
+        [Fact]
         public async Task GetTotalSpendAsync_SumsCompletedOrders()
         {
             // Arrange
@@ -95,6 +156,32 @@ namespace OrderManagement.Tests
             // Verify only with Completed status are totaled, not other statuses
             repo.Verify(r => r.LoadOrdersAsync(1, "Completed"), Times.Once);
         }
+
+        [Fact]
+        public async Task GetTotalSpendAsync_MixedOrders_SumCompletedOrdersOnly()
+        {
+            // Arrange
+            var cache = new MemoryCache(new MemoryCacheOptions());
+            var repo = new Mock<IOrderRepository>(MockBehavior.Strict);
+            var mixedOrders = new List<Order>
+            {
+                new() { OrderId = 1, CustomerId = 1, Total = 150.00m, Status = "Completed"},
+                new() { OrderId = 2, CustomerId = 1, Total = 25.50m, Status = "Completed"},
+                new() { OrderId = 3, CustomerId = 1, Total = 100.00m, Status = "Pending"}
+            };
+
+            repo.Setup(r => r.LoadOrdersAsync(1, "Completed")).ReturnsAsync(mixedOrders);
+            var service = new OrderService(repo.Object, cache);
+
+            //Act
+            var total = await service.GetTotalSpendAsync(1);
+
+            // Assert
+            // total should only be for orders with "Completed" status
+            Assert.Equal(175.50m, total);
+            repo.Verify(r => r.LoadOrdersAsync(1, "Completed"), Times.Once);
+        }
+
 
 
         [Fact]
@@ -128,7 +215,7 @@ namespace OrderManagement.Tests
                 () => service.UpdateOrderStatusAsync(999, "Completed"));
 
             repo.Verify(r => r.UpdateOrderStatusAsync(It.IsAny<int>(), It.IsAny<string>()), Times.Never);
-           
+
         }
 
         [Fact]

@@ -1,6 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
 using OrderManagement.Core.Repositories;
+using System.Collections.Concurrent;
 
 public class Order
 {
@@ -15,6 +16,13 @@ public class OrderService
     private readonly IMemoryCache _cache;
 
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromSeconds(30);
+
+    // Coordinates concurrent cache-miss requests for the same key so the DB
+    // is only hit once per miss, no matter how many callers race in at the
+    // same time. Self-cleaning - an entry only lives here for the duration
+    // of one in-flight load, then it's removed, so this can't grow
+    // unbounded the way the old _keyLocks dictionary did.
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Order>>>> _inFlightLoads = new();
 
     private readonly IOrderRepository _repository;
 
@@ -33,31 +41,45 @@ public class OrderService
     {
         string cacheKey = BuildCacheKey(customerId, status);
 
-        //Returns existing unexpired cached value or creates new entry with the call to DB
-        var lazyOrders = _cache.GetOrCreate(cacheKey, entry =>
+        // If already cached, return right away
+        if (_cache.TryGetValue(cacheKey, out List<Order>? cached))
         {
-            entry.AbsoluteExpirationRelativeToNow = _cacheTtl;
-            return new Lazy<Task<List<Order>>>(() => _repository.LoadOrdersAsync(customerId, status));
-        });
+            return cached!;
+        }
+
+        // If miss - coordinate with any other concurrent callers racing on the
+        // exact same key. GetOrAdd guarantees every racer receives the same
+        // Lazy instance, so the DB call only actually happens once no
+        // matter how many threads land here simultaneously.
+        var lazyLoad = _inFlightLoads.GetOrAdd(
+            cacheKey,
+            key => new Lazy<Task<List<Order>>>(() => LoadAndCacheAsync(key, customerId, status)));
+       
 
         try
         {
             //Triggers the actual call to the DB
-            return await lazyOrders!.Value;
+            return await lazyLoad!.Value;
         }
-        catch
+        finally
         {
-            //Removes bad entry in the event of DB call failure
-            _cache.Remove(cacheKey);
-            throw;
+            // Remove once resolved (success or failure) - it was only ever
+            // needed to coordinate the in-flight race, not as a cache.
+            _inFlightLoads.TryRemove(cacheKey, out _);
         }
     }
 
+    private async Task<List<Order>> LoadAndCacheAsync(string cacheKey, int customerId, string status)
+    {
+        var orders = await _repository.LoadOrdersAsync(customerId, status);
+        _cache.Set(cacheKey, orders, _cacheTtl);
+        return orders;
+    }
 
     public async Task<decimal> GetTotalSpendAsync(int customerId)
     {
         var orders = await GetOrdersForCustomerAsync(customerId, "Completed");
-        var total = orders.Sum(o => o.Total);
+        var total = orders.Where(o => o.Status == "Completed").Sum(o => o.Total);
         return total;
     }
 

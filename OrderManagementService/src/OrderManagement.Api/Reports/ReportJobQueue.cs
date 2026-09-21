@@ -6,11 +6,7 @@ namespace OrderManagement.Api.Reports
     {
         // Bounded so a burst of report requests can't grow memory without limit
         private const int MaxQueueDepth = 100;
-        private readonly Channel<ReportJobRequest> _channel = Channel.CreateBounded<ReportJobRequest>(
-            new BoundedChannelOptions(MaxQueueDepth)
-            {
-                FullMode = BoundedChannelFullMode.Wait
-            });
+        private readonly Channel<ReportJobRequest> _channel = Channel.CreateBounded<ReportJobRequest>(MaxQueueDepth);
 
         // Non-blocking - returns false immediately if the queue is at capacity
         public bool TryEnqueue(ReportJobRequest request)

@@ -4,26 +4,37 @@ using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using System.Text;
 using Microsoft.OpenApi;
+using OrderManagement.Tests.Infrastructure;
 
 namespace OrderManagement.Tests
 {
-    public class SqlInjectionRegressionTests
+    public class SqlInjectionRegressionTests : IClassFixture<TestDatabase>
     {
-        // Local dev connection string
-        private const string connectionString = "Server=localhost;Database=OrderManagementDb;Trusted_Connection=True;TrustServerCertificate=True;";
+        private static readonly string[] InjectionPayloads =
+        {
+            "Completed'; DROP TABLE Orders; --",
+            "' OR '1' = '1",
+            "Completed' UNION SELECT CustomerId, Name, Email, IsActive FROM Customers--"
+        };
+
+        public static IEnumerable<object[]> Payloads => InjectionPayloads.Select(p => new object[] { p });
+
+        private readonly TestDatabase _db;
+        public SqlInjectionRegressionTests(TestDatabase db)
+        {
+            _db = db;
+        }
 
         [Theory]
-        [InlineData("Completed'; DROP TABLE Orders; --")]
-        [InlineData("' OR '1' = '1")]
-        [InlineData("Completed' UNION SELECT CustomerId, Name, Email, IsActive FROM Customers--")]
+        [MemberData(nameof(Payloads))]
         public async Task LoadOrdersAsync_InjectionPayloadInStatus_TreatedAsLiteralValue(string payload)
         {
             // Arrange
-            var repository = new SqlOrderRepository(connectionString);
+            var repository = new SqlOrderRepository(_db.ConnectionString);
 
             // Act
             // the payload becomes value for @status parameter
-            var result = await repository.LoadOrdersAsync(1,payload);
+            var result = await repository.LoadOrdersAsync(1, payload);
 
             //Asert
             Assert.Empty(result);
@@ -33,20 +44,21 @@ namespace OrderManagement.Tests
         public async Task Orders_SurviveInjectionAttempts_TableAndSeedDataIntact()
         {
             // Arrange
-            var repository = new SqlOrderRepository(connectionString);
-            string query = "SELECT COUNT(*) FROM Orders";
+            var repository = new SqlOrderRepository(_db.ConnectionString);
 
             // Act
-            using var conn = new SqlConnection(connectionString);
-            await conn.OpenAsync();
-            using var cmd = new SqlCommand(query, conn);
-            var orderCount = (int)(await cmd.ExecuteScalarAsync())!;
+            foreach (var payload in InjectionPayloads)
+            {
+                await repository.LoadOrdersAsync(TestDatabase.SeededCustomerId, payload);
+            }
 
             // Assert
-            Assert.True(orderCount > 0);
-            // check known data is untouched
-            var completedOrders = await repository.LoadOrdersAsync(1, "Completed");
-            Assert.Equal(2, completedOrders.Count);
+            // The table still exists and holds exactly the seeded rows
+            var orderCount = await _db.ScalarAsync<int>("SELECT COUNT(*) FROM Orders");
+            Assert.Equal(TestDatabase.SeededTotalOrderCount, orderCount);
+
+            var completedOrders = await repository.LoadOrdersAsync(TestDatabase.SeededCustomerId, "Completed");
+            Assert.Equal(TestDatabase.SeededCompletedOrderCount, completedOrders.Count);
 
         }
     }

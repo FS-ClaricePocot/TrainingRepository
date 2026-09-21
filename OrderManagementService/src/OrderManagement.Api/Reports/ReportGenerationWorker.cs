@@ -23,7 +23,7 @@
                 }
                 catch (Exception exception)
                 {
-                    _logger.LogError(exception, "An unhandled error occured while processing report job {job.JobId}", job.JobId);
+                    _logger.LogError(exception, "An unhandled error occurred while processing report job {job.JobId}", job.JobId);
                 }
             }    
            

@@ -38,7 +38,17 @@ namespace OrderManagement.Api.Auth
                 return AuthenticateResult.Fail($"Missing {ApiKeyAuthConstants.HeaderName} header.");
             }
 
-            var partner = await ValidateApiKeyAsync(providedKey!);
+            ValidatedPartner? partner;
+            try
+            {
+                partner = await ValidateApiKeyAsync(providedKey!);
+            }
+            catch (Exception exception)
+            {
+                Logger.LogError(exception, "API key validation failed unexpectedly");
+                return AuthenticateResult.Fail("API key validation is currently unavailable.");
+            }
+
             if (partner is null)
             {
                 return AuthenticateResult.Fail("Invalid API Key");
@@ -68,14 +78,9 @@ namespace OrderManagement.Api.Auth
                 return null;
             }
 
-            if (key.Status == PartnerKeyStatus.Rotating)
-            {
-                var graceExpiry = key.RotatingSince!.Value.Add(_rotationGracePeriod);
-                if (DateTime.UtcNow > graceExpiry)
-                {
-                    // if grace period elapsed, treat the same as Revoked
-                    return null;
-                }
+            if (key.Status == PartnerKeyStatus.Rotating && (key.RotatingSince is not { } since || DateTime.UtcNow > since.Add(_rotationGracePeriod)))
+            {               
+                return null;
             }
 
             var partner = await _partnerRepository.GetPartnerAsync(key.PartnerId);

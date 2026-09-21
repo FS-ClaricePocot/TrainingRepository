@@ -69,7 +69,7 @@ namespace OrderManagement.Api.Reports
                 _jobStore.Set(jobId, new ReportJobRecord
                 {
                     Status = ReportJobStatus.Failed,
-                    Error = "An internal error occured while generating the report."
+                    Error = "An internal error occurred while generating the report."
 
                 }, _jobRetention);
             }

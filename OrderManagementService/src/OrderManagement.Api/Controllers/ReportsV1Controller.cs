@@ -36,7 +36,12 @@ namespace OrderManagement.Api.Controllers
             try
             {
                 var jobId = await _reportService.QueueReportAsync(request.GroupBy);
-                return AcceptedAtAction(nameof(GetReportStatus), new { jobId }, new ReportJobAcceptedResponse { JobId = jobId });
+                if (jobId is null)
+                {
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "Report queue is full. Please retry shortly." });
+                }
+
+                return AcceptedAtAction(nameof(GetReportStatus), new { jobId }, new ReportJobAcceptedResponse { JobId = jobId.Value });
             }
             catch (Exception exception)
             {

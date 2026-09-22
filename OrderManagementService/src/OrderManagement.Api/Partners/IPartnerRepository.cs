@@ -7,7 +7,7 @@
         Task<PartnerApiKey?> FindByHashedKeyAsync(string hashedKey);
         Task<PartnerApiKey?> GetActiveKeyForPartnerAsync(int partnerId);
         Task MarkRotatingAsync(int keyId);
-        Task MarkRevokedAsync(int keyId);
+        Task<bool> MarkRevokedAsync(int partnerId, int keyId);
         Task<Partner?> GetPartnerAsync(int partnerId);
     }
 

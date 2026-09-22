@@ -50,7 +50,7 @@ namespace OrderManagement.Api.Controllers
             catch(Exception exception)
             {
                 _logger.LogError(exception, "Failed while provisioning partner {name}", request.Name);
-                return StatusCode(500, new { error = "An internal error occured." });
+                return StatusCode(500, new { error = "An internal error occurred." });
             }
         }
 
@@ -90,7 +90,7 @@ namespace OrderManagement.Api.Controllers
             catch (Exception exception)
             {
                 _logger.LogError(exception, "Failure while rotating key for partner {partnerId}", partnerId);
-                return StatusCode(500, new { error = "An internal error occured." });
+                return StatusCode(500, new { error = "An internal error occurred." });
             }
         }
 
@@ -104,13 +104,18 @@ namespace OrderManagement.Api.Controllers
 
             try
             {
-                await _partnerRepository.MarkRevokedAsync(keyId);
+                var revoked = await _partnerRepository.MarkRevokedAsync(partnerId: partnerId, keyId: keyId);
+                if(!revoked)
+                {
+                    return NotFound(new { error = $"Key {keyId} was not found for partner {partnerId}." });
+                }
+
                 return NoContent();
             }
             catch(Exception exception)
             {
-                _logger.LogError(exception, "Failure while revokey key {keyId} for partner {partner}", keyId, partnerId);
-                return StatusCode(500, new { error = "An internal error occured" });
+                _logger.LogError(exception, "Failure while revoking key {keyId} for partner {partner}", keyId, partnerId);
+                return StatusCode(500, new { error = "An internal error occurred" });
             }
         }
     }

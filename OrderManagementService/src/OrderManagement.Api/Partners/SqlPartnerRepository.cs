@@ -97,18 +97,21 @@ namespace OrderManagement.Api.Partners
                 : null;
         }
 
-        public async Task MarkRevokedAsync(int keyId)
+        public async Task<bool> MarkRevokedAsync(int partnerId, int keyId)
         {
             const string query = @"
                 UPDATE PartnerApiKeys
-                SET Status = 'Revoked', RevokedAt = SYSUTCDATETIME()
-                WHERE KeyId = @keyId";
+                SET Status = 'Revoked', RevokedAt = COALESCE(RevokedAt,SYSUTCDATETIME())
+                WHERE KeyId = @keyId AND PartnerId = @partnerId";
 
             using var conn = new SqlConnection(_connectionString);
             await conn.OpenAsync();
             using var cmd = new SqlCommand(query, conn);
+            cmd.Parameters.AddWithValue("@partnerId", partnerId);
             cmd.Parameters.AddWithValue("@keyId", keyId);
-            await cmd.ExecuteNonQueryAsync();
+            
+            // no rows returned means no matched keys found to revoke
+            return await cmd.ExecuteNonQueryAsync() > 0;
         }
 
         public async Task MarkRotatingAsync(int keyId)

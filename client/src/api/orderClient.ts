@@ -4,7 +4,11 @@
 import type { Order, OrderStatus } from "../types/order";
 
 const BASE_URL = "https://localhost:7271";
+const API_KEY = import.meta.env.VITE_API_KEY;
 
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  return { "X-Api-Key": API_KEY, ...extra };
+}
 
 export type ApiError =
   | { type: "network"; message: string }
@@ -27,10 +31,10 @@ async function toApiError(response: Response): Promise<ApiError> {
     if (
       typeof body === "object" &&
       body !== null &&
-      "message" in body &&
-      typeof (body as { message: unknown }).message === "string"
+      "error" in body &&
+      typeof (body as { error: unknown }).error === "string"
     ) {
-      message = (body as { message: string }).message;
+      message = (body as { error: string }).error;
     }
   } catch {
     // Error response body wasn't valid JSON — fall back to statusText set above.
@@ -71,7 +75,7 @@ export async function getOrdersForCustomer(
       `${BASE_URL}/api/v1/orders` +
       `?customerId=${encodeURIComponent(customerId)}` +
       `&status=${encodeURIComponent(status)}`;
-    response = await fetch(url);
+    response = await fetch(url, {headers: authHeaders()});
   } catch (err) {
     return toNetworkError(err);
   }
@@ -99,8 +103,8 @@ export async function getTotalSpend(
 ): Promise<RequestState<TotalSpendResponse>> {
   let response: Response;
   try {
-    const url = `${BASE_URL}/api/customers/${encodeURIComponent(customerId)}/total-spend`;
-    response = await fetch(url);
+    const url = `${BASE_URL}/api/v1/customers/${encodeURIComponent(customerId)}/total-spend`;
+    response = await fetch(url, {headers: authHeaders()});
   } catch (err) {
     return toNetworkError(err);
   }
@@ -123,10 +127,10 @@ export async function updateOrderStatus(
   status: OrderStatus
 ): Promise<RequestState<void>> {
   try {
-    const url = `${BASE_URL}/api/orders/${encodeURIComponent(orderId)}/status`;
+    const url = `${BASE_URL}/api/v1/orders/${encodeURIComponent(orderId)}/status`;
     const response = await fetch(url, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ status }),
     });
 

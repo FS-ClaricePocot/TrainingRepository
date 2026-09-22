@@ -16,10 +16,10 @@ namespace OrderManagement.Api.Controllers
     [Authorize(Policy = AuthorizationPolicyNames.DualConsumer)]
     public class ReportsV1Controller : ControllerBase
     {
-        private readonly ReportService _reportService;
+        private readonly IReportService _reportService;
         private readonly ILogger<ReportsV1Controller> _logger;
 
-        public ReportsV1Controller(ReportService reportService, ILogger<ReportsV1Controller> logger)
+        public ReportsV1Controller(IReportService reportService, ILogger<ReportsV1Controller> logger)
         {
             _reportService = reportService;
             _logger = logger;

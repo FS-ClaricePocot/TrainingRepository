@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 
 namespace OrderManagement.Api.Reports
 {
-    public class ReportService
+    public class ReportService: IReportService
     {
         private readonly string _connectionString;
         private readonly IMemoryCache _jobStore;

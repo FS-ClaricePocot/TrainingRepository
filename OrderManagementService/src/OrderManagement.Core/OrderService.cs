@@ -1,5 +1,7 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Memory;
+using OrderManagement.Core.Repositories;
+using System.Collections.Concurrent;
 
 public class Order
 {
@@ -15,11 +17,18 @@ public class OrderService
 
     private static readonly TimeSpan _cacheTtl = TimeSpan.FromSeconds(30);
 
-    private readonly string _connectionString;
+    // Coordinates concurrent cache-miss requests for the same key so the DB
+    // is only hit once per miss, no matter how many callers race in at the
+    // same time. Self-cleaning - an entry only lives here for the duration
+    // of one in-flight load, then it's removed, so this can't grow
+    // unbounded the way the old _keyLocks dictionary did.
+    private readonly ConcurrentDictionary<string, Lazy<Task<List<Order>>>> _inFlightLoads = new();
 
-    public OrderService(string connectionString, IMemoryCache cache)
+    private readonly IOrderRepository _repository;
+
+    public OrderService(IOrderRepository repository, IMemoryCache cache)
     {
-        _connectionString = connectionString;
+        _repository = repository;
         _cache = cache;
     }
 
@@ -32,64 +41,52 @@ public class OrderService
     {
         string cacheKey = BuildCacheKey(customerId, status);
 
-        //Returns existing unexpired cached value or creates new entry with the call to DB
-        var lazyOrders = _cache.GetOrCreate(cacheKey, entry =>
+        // If already cached, return right away
+        if (_cache.TryGetValue(cacheKey, out List<Order>? cached))
         {
-            entry.AbsoluteExpirationRelativeToNow = _cacheTtl;
-            return new Lazy<Task<List<Order>>>(() => LoadOrdersFromDbAsync(customerId, status));
-        });
+            return cached!;
+        }
+
+        // If miss - coordinate with any other concurrent callers racing on the
+        // exact same key. GetOrAdd guarantees every racer receives the same
+        // Lazy instance, so the DB call only actually happens once no
+        // matter how many threads land here simultaneously.
+        var lazyLoad = _inFlightLoads.GetOrAdd(
+            cacheKey,
+            key => new Lazy<Task<List<Order>>>(() => LoadAndCacheAsync(key, customerId, status)));
+       
 
         try
         {
             //Triggers the actual call to the DB
-            return await lazyOrders!.Value;
+            return await lazyLoad!.Value;
         }
-        catch
+        finally
         {
-            //Removes bad entry in the event of DB call failure
-            _cache.Remove(cacheKey);
-            throw;
+            // Remove once resolved (success or failure) - it was only ever
+            // needed to coordinate the in-flight race, not as a cache.
+            _inFlightLoads.TryRemove(cacheKey, out _);
         }
     }
 
-    public async Task<List<Order>> LoadOrdersFromDbAsync(int customerId, string status)
+    private async Task<List<Order>> LoadAndCacheAsync(string cacheKey, int customerId, string status)
     {
-        var orders = new List<Order>();
-        string query = "SELECT OrderId, CustomerId, Total, Status FROM Orders WHERE CustomerId = @customerId AND Status = @status";
-
-        using (var conn = new SqlConnection(_connectionString))
-        {
-            await conn.OpenAsync();
-            using var cmd = new SqlCommand(query, conn);
-            cmd.Parameters.AddWithValue("@customerId", customerId);
-            cmd.Parameters.AddWithValue("@status", status);
-            using var reader = await cmd.ExecuteReaderAsync();
-
-            while (await reader.ReadAsync())
-            {
-                var order = new Order();
-                order.OrderId = reader.GetInt32(0);
-                order.CustomerId = reader.GetInt32(1);
-                order.Total = reader.GetDecimal(2);
-                order.Status = reader.GetString(3);
-                orders.Add(order);
-            }
-        }
-
+        var orders = await _repository.LoadOrdersAsync(customerId, status);
+        _cache.Set(cacheKey, orders, _cacheTtl);
         return orders;
     }
 
     public async Task<decimal> GetTotalSpendAsync(int customerId)
     {
         var orders = await GetOrdersForCustomerAsync(customerId, "Completed");
-        var total = orders.Sum(o => o.Total);
+        var total = orders.Where(o => o.Status == "Completed").Sum(o => o.Total);
         return total;
     }
 
     public async Task UpdateOrderStatusAsync(int orderId, string newStatus)
     {
         //Look up current details from DB for this order before updating
-        var (customerId, oldStatus) = await GetOrderCustomerAndStatusAsync(orderId);
+        var (customerId, oldStatus) = await _repository.GetOrderCustomerAndStatusAsync(orderId);
 
         if (customerId is null)
         {
@@ -97,40 +94,11 @@ public class OrderService
             throw new InvalidOperationException($"Order {orderId} was not found.");
         }
 
-
-        string query = "UPDATE Orders SET Status = @newStatus WHERE OrderId = @orderId";
-        using (var conn = new SqlConnection(_connectionString))
-        {
-            await conn.OpenAsync();
-            using var cmd = new SqlCommand(query, conn);
-            cmd.Parameters.AddWithValue("@newStatus", newStatus);
-            cmd.Parameters.AddWithValue("@orderId", orderId);
-            await cmd.ExecuteNonQueryAsync();
-        }
+        await _repository.UpdateOrderStatusAsync(orderId, newStatus);
 
         //Invalidate existing stale value in cache
         _cache.Remove(BuildCacheKey(customerId.Value, oldStatus!));
         _cache.Remove(BuildCacheKey(customerId.Value, newStatus));
     }
 
-    private async Task<(int? CustomerId, string? Status)> GetOrderCustomerAndStatusAsync(int orderId)
-    {
-        int? customerId = null;
-        string? status= null;
-        string queryCurrentStatus = "SELECT CustomerId, Status FROM Orders where OrderId = @orderId";
-        using (var conn = new SqlConnection(_connectionString))
-        {
-            await conn.OpenAsync();
-            using var cmd = new SqlCommand(queryCurrentStatus, conn);
-            cmd.Parameters.AddWithValue("@orderId", orderId);
-            using var reader = await cmd.ExecuteReaderAsync();
-
-            while (await reader.ReadAsync())
-            {
-                customerId = reader.GetInt32(0);
-                status = reader.GetString(1);
-            }
-        }
-        return (customerId,status);
-    }
 }

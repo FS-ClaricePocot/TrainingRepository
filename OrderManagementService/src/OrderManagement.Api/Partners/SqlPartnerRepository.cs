@@ -101,7 +101,7 @@ namespace OrderManagement.Api.Partners
         {
             const string query = @"
                 UPDATE PartnerApiKeys
-                SET Status = 'Revoked', RevokedAt = COALESCE(Revokedat,SYSUTCDATETIME())
+                SET Status = 'Revoked', RevokedAt = COALESCE(RevokedAt,SYSUTCDATETIME())
                 WHERE KeyId = @keyId AND PartnerId = @partnerId";
 
             using var conn = new SqlConnection(_connectionString);

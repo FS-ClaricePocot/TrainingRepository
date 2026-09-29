@@ -65,11 +65,7 @@ namespace OrderManagement.Api.RateLimiting
                         return RateLimitPartition.GetFixedWindowLimiter($"partner:{partnerId}", _ => ToFixedWindowOptions(settings.PartnerPolicy));
                     }
 
-                    // [Authorize] enforcement isn't wired onto the controllers yet (separate,
-                    // still-pending task), so requests can still reach here unauthenticated.
-                    // Fall back to the stricter partner-level limits, partitioned by IP,
-                    // instead of defaulting to exempted - an unresolved identity
-                    // should never get the loose admin allowance.
+
                     var remoteIp = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
                     return RateLimitPartition.GetFixedWindowLimiter($"anonymous:{remoteIp}", _ => ToFixedWindowOptions(settings.PartnerPolicy));

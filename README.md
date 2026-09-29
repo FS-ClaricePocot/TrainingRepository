@@ -277,3 +277,5 @@ alongside this project.
 - **Report generation has a hardcoded 5-second simulated delay** (`ReportService`), standing
   in for a production-scale query — noted in-code as a simulation, not a real workload
   measurement beyond the comment that a real 50k-row query took ~126ms.
+- **No Unit Test Coverage for Partner API Key Management**,(`PartnersController`) no test coverage 
+for endpoints to manage Partner API Key lifecycle
